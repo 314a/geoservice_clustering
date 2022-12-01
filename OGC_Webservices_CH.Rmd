@@ -1,0 +1,118 @@
+---
+title: "Open OGC Geoservices in Switzerland"
+subtitle: "Exploratory Analysis of the available OGC services"
+format:
+  html:
+    embed-resources: false
+editor: visual
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+## OGC Webservices in Switzerland
+
+This document explores the OGC webservices provided by the various public open data provider. These OGC webservices are publicly available and provide broad and well maintained metadata of the content they portray.
+
+This analysis is based on the harvested OGC web services (WMS, WMTS, WFS) of Switzerland by the following repository: <https://github.com/davidoesch/geoservice_harvester_poc> by [David Oesch](https://github.com/davidoesch). The *geoservice harvester* crawls the known OGC web services managed by the state, cantons and communes.
+
+```{r directorySetup,comment=FALSE, message = FALSE, echo=FALSE,warning=FALSE}
+# rm(list=ls())         # Clean the environment (comment out, if batch script)
+options(scipen=999)     # display digits proberly!! not the scientific version
+options(digits.secs=6)  # use milliseconds in Date/Time data types
+options(warning=FALSE)  # don't show warnings
+library(knitr)          # set global knitr options of the document
+# memory.limit(size=1800) # set memory limit 
+
+# Libraries
+library(rgdal)# install.packages("rgdal") # install libraries
+library(dplyr)
+library(tidyr)
+library(sf)
+library(ggplot2)
+library(ggrepel) # https://github.com/slowkow/ggrepel/issues/89
+library(RColorBrewer)
+library(igraph)
+library(kableExtra) # http://haozhu233.github.io/kableExtra/best_practice_for_newline_in_latex_table.pdf
+options(kableExtra.auto_format = TRUE)
+
+# Folders
+dataFolder   <- file.path("data")   # Set path to the data and figure folder
+resultFolder <- file.path("result") # Set path to the data and figure folder
+# Settings
+themeReport <- theme_minimal() # customise plot theme
+colorPal <- c("#ddf1da","#abdda4","#e6f598","#fee08b","#fdae61","#f46d43","#d53e4f") # set a color palette for the map
+colorPrimary <- "#1f78b4"
+caption <- "Data Source: OGC Webservices Switzerland"
+```
+
+```{r readdata}
+# Set file paths
+geoCHPath = "https://raw.githubusercontent.com/davidoesch/geoservice_harvester_poc/main/data/geoservices_CH.csv"
+geoSimpleCHPath = "https://raw.githubusercontent.com/davidoesch/geoservice_harvester_poc/main/data/geodata_simple_CH.csv"
+geoservicesCHPath = "https://raw.githubusercontent.com/davidoesch/geoservice_harvester_poc/main/data/geoservices_CH.csv" # TODO chec if duplicate of geoCHPath
+
+# read files
+geoCH <- read.csv(geoCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
+geoSimpleCH <- read.csv(geoSimpleCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
+geoservicesCH <- read.csv(geoservicesCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
+```
+
+### Dataset
+
+| Dataset               | Description                                                     |
+|-------------------|-----------------------------------------------------|
+| geoservices_CH.csv    | OGC Services of Switzerland full dataset                        |
+| geodata_simple_CH.csv | OGC Services of Switzerland reduced dataset (Owner, Title, Url) |
+
+```{r}
+id <- sample.int(nrow(geoCH),1) # random service
+d <- data.frame(key=names(geoCH),example=as.character(geoCH[id,]))
+knitr::kable(d, digits = 2,row.names=FALSE, col.names = c("Key","OGC Service Example"),caption = "Field names and OGC Service Value Example", booktabs = TRUE,caption.short = "Random OGC Service")  %>% column_spec(2,width="8 cm") %>%  kable_classic(font_size = 10)
+```
+
+### Distribution of Content by Service Owners
+
+How many layers do the various service provider offer? How are the services structured?
+
+```{r}
+d <- geoCH %>% group_by(OWNER) %>% summarise(layers = length(unique(NAME)), links = length(unique(SERVICELINK)))
+```
+
+```{r}
+#| fig-cap: Number of Layers provided by each service owner 
+#| fig-height: 6
+ggplot(data = d, aes(x=reorder(OWNER,layers), y= layers)) + 
+  geom_bar(stat = "identity",fill=colorPrimary) +
+  geom_text(aes(label = layers), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
+   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
+  coord_flip() +
+   theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
+  labs(title = "Distribution of Content by Service Owners", subtitle= "Number of layers by Service Owner",x = NULL,y = "Number of Layers",fill="",caption=caption)
+```
+
+```{r}
+#| fig-cap: Number of unique service links provided by each service owner 
+#| fig-height: 6
+ggplot(data = d, aes(x=reorder(OWNER,links), y= links)) + 
+  geom_bar(stat = "identity",fill=colorPrimary) +
+  geom_text(aes(label = links), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
+   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
+  coord_flip() +
+   theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
+  labs(title = "Distribution of Service Links", subtitle= "Number of Service Links by Service Owner",x = NULL,y = "Number of Service Links",fill="",caption=caption)
+
+```
+
+```{r}
+#| fig-cap: Number of unique service links provided by each service owner 
+#| fig-height: 6
+
+ggplot(data = d, aes(x=layers, y= links)) + 
+  geom_point(size=1,color=colorPrimary)+
+  # geom_text(aes(label = OWNER), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
+  geom_text_repel(mapping = aes(x = layers,y = links,label = OWNER),size = 2.4,min.segment.length = 0,point.padding = 0.5,segment.color = "grey30", max.overlaps=13)+ scale_y_continuous(trans = "log10")+
+  themeReport +labs(x = "Number of Layers",y = "Number of Service Links",title = "Number of Service Url vs Layers", caption=caption)
+
+```
