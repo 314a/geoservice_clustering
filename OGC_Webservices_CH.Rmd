@@ -3,7 +3,7 @@ title: "Open OGC Geoservices in Switzerland"
 subtitle: "Exploratory Analysis of the available OGC services"
 format:
   html:
-    embed-resources: false
+    embed-resources: true
 editor: visual
 execute:
   echo: false
@@ -36,6 +36,8 @@ library(RColorBrewer)
 library(igraph)
 library(kableExtra) # http://haozhu233.github.io/kableExtra/best_practice_for_newline_in_latex_table.pdf
 options(kableExtra.auto_format = TRUE)
+library(tm)
+
 
 # Folders
 dataFolder   <- file.path("data")   # Set path to the data and figure folder
@@ -76,7 +78,7 @@ lakesSF<- st_read(dsn = lakeShapeFile,stringsAsFactors = FALSE,quiet=TRUE)
 ```{r}
 id <- sample.int(nrow(geoCH),1) # random service
 d <- data.frame(key=names(geoCH),example=as.character(geoCH[id,]))
-knitr::kable(d, digits = 2,row.names=FALSE, col.names = c("Key","OGC Service Example"),caption = "Field names and OGC Service Value Example", booktabs = TRUE,caption.short = "Random OGC Service")  %>% column_spec(2,width="8 cm") %>%  kable_classic(font_size = 10)
+knitr::kable(d, digits = 2,row.names=FALSE, col.names = c("Key","OGC Service Example"),caption = "Field names and OGC Service Value Example", booktabs = TRUE,caption.short = "Random OGC Service") %>% column_spec(2,width="8 cm") %>%  kable_classic(font_size = 12)
 ```
 
 **Spatial Datasets**
@@ -194,7 +196,7 @@ knitr::kable(d, digits = 2,row.names=FALSE,caption = "Frequency of CRS provided 
 
 ```{r}
 #| fig-cap: Frequency of CRS provided for Geoservies in CH (epsg)
-#| fig-height: 6
+#| fig-height: 2
 
 ggplot(data = d, aes(x=reorder(epsg,n), y= n)) + 
   geom_bar(stat = "identity",fill=colorPrimary) +
@@ -207,112 +209,13 @@ ggplot(data = d, aes(x=reorder(epsg,n), y= n)) +
 ```
 
 ```{r}
-# create bounding boxes from services
-bboxstr <- "2740443.137 1232276.032 2765413.73 1258037.171 EPSG:2056"
-
-str2BBox <- function(str){
-  x <- unlist(strsplit(str ," "))
-  epsg <- as.numeric(unlist(strsplit(x[5] ,":"))[2])
-  x <- as.numeric(x[1:4])
-  # create the geometry sfc column
-  # with a lit of multiple boundingboxes
-  # 
-  bbox <- st_sfc(st_polygon(list(cbind(
-    c(x[1],x[3],x[3],x[1],x[1]), # x coords 
-    c(x[2],x[2],x[4],x[4],x[2])  # y coords
-    ))),crs = epsg)
-  
-  p <- st_multipoint(rbind(c(x[1],x[2]),c(x[3],x[4])))
-  bbox <- st_as_sfc(st_bbox(p)) 
-  st_crs(bbox) <- epsg
-  
-  # create a bounding box class of a named vector
-  names(x) <- c("xmin" ,"ymin", "xmax", "ymax")
-  class(x) <- "bbox"
-  bbox <- st_as_sfc(x)
-    st_crs(bbox) <- epsg
-  
-
-  pt1 = st_point(c(0,1))d = st_sf(data.frame(a=1:2, geom=sfc))
-  
-  # bbox <- st_bbox(c(xmin = as.numeric(x[1]), xmax = as.numeric(x[3]), ymax = as.numeric(x[4]), ymin = as.numeric(x[2])), crs = st_crs(epsg))
-  return(bbox)
-}
-
-# convert bounding box string to a polgon 
-# eg. "2740443.137 1232276.032 2765413.73 1258037.171 EPSG:2056"
-# https://github.com/r-spatial/sf/issues/1034
-str2BBox <- function(bboxString){
-  i = 0
-  res <- lapply(bboxString,function(str){
-    i <- i +1
-    # extract coordinates and EPSG Code
-    x <- unlist(strsplit(str ," "))
-    x <- x[x != ""] # remove empty strings
-    if(length(x)==0){return(st_polygon())} # return an empty polygon if coordinates are missing
-    # epsg <- as.numeric(unlist(strsplit(x[5] ,":"))[2])
-    x <- as.numeric(x[1:4])
-    if(anyNA(x)){cat(i,": ",x,"has NA")}
-    # create a bounding box polygon
-    x <- st_polygon(list(cbind(
-          c(x[1],x[3],x[3],x[1],x[1]), # x coords 
-          c(x[2],x[2],x[4],x[4],x[2])  # y coords
-          )))
-    return(x)
-  })
-  return(res)
-}
-# extract coordinates and EPSG Code
-# eg. "2740443.137 1232276.032 2765413.73 1258037.171 EPSG:2056"
-str2EPSG <- function(bboxString){
-  res <- lapply(bboxString,function(str){
-    epsg <- as.numeric(unlist(strsplit(str,":"))[2])
-    return(epsg)
-  })
-  return(unlist(res))
-}
-
-
-# create a bounding box class of a named vector
-#names(x) <- c("xmin" ,"ymin", "xmax", "ymax")
-#class(x) <- "bbox"   
-#return( st_as_sfc(x))
-
-
-bboxSF <- str2BBox(bboxstr)
-
-y <- str2BBox(c(bboxstr,bboxstr))
-ye <- str2EPSG(c(bboxstr,bboxstr))
-
-
-d = st_sf(data.frame(a=1:2), geometry=y)
-
-
-t <- geoCH[209,"BBOX"]
-
-geoBBox <- str2BBox(geoCH[9780:9785,"BBOX"])
-geoBBox <- str2BBox(geoCH[,"BBOX"])
-geoEPSG <- str2EPSG(geoCH$BBOX)
-
-
-geoCHSF <- st_sf(geoCH,geoBBox)
-geoCHSF$epsg <- str2EPSG(geoCH$BBOX)
-geoCHSF$isEmpty <- st_is_empty(geoCHSF)
-
-st_is_empty(d)
-
-
-
-```
-
-```{r}
 dsf <- geoCHSF %>% filter(epsg==2056)
 st_crs(dsf) <- 2056
 ggplot() + themeReport  +
   geom_sf(data = cantonSF,fill=NA, colour="#cccccc",size=0.25) +
   geom_sf(data = lakesSF, fill="#a6cee3", color="#a6cee3",alpha=0.6,size=0.25) +
   geom_sf(data = dsf,fill=NA, colour="#ff660020",size=0.25) +
-  labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes",fill = "",x = NULL,y = NULL,colour="", caption=paste(caption,", BFS",sep=""))+coord_sf(datum = NA)
+  labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes with EPSG 2056",fill = "",x = NULL,y = NULL,colour="", caption=paste(caption,", BFS",sep=""))+coord_sf(datum = NA)
 ```
 
 ```{r}
@@ -333,8 +236,102 @@ ggplot() + themeReport  +
   geom_sf(data = cantonSF,fill=NA, colour="#cccccc",size=0.25) +
   geom_sf(data = lakesSF, fill="#a6cee3", color="#a6cee3",alpha=0.6,size=0.25) +
   geom_sf(data = dsf,fill=NA, colour="#ff660020",size=0.25,alpha=0.01) +
-  labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes",fill = "",x = NULL,y = NULL,colour="", caption=paste(caption,", BFS",sep=""))+coord_sf(datum = NA)
+  labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes with EPSG 2056",fill = "",x = NULL,y = NULL,colour="", caption=paste(caption,", BFS",sep=""))+coord_sf(datum = NA)
 
+```
 
+```{r}
+# generate word cloud from service title, abstract, keywords
+library(tm)
+library(wordcloud)
+library(RColorBrewer)
+# function to create a clean text corpus
+createCorpus <- function(text){
+  docs <- Corpus(VectorSource(text))
+  docs <- docs %>%
+    tm_map(removeNumbers) %>%
+    tm_map(removePunctuation) %>%
+    tm_map(stripWhitespace)
+  docs <- tm_map(docs, content_transformer(tolower))
+  
+  docs <- tm_map(docs, removeWords, stopwords("english"))
+  docs <- tm_map(docs, removeWords, stopwords("german"))
+  docs <- tm_map(docs, removeWords, stopwords("french"))
+  docs <- tm_map(docs, removeWords, stopwords("italian"))
+  return(docs)
+}
+createTermDocumentMatrix <- function(docs){
+  dtm <- TermDocumentMatrix(docs) 
+  matrix <- as.matrix(dtm) 
+  words <- sort(rowSums(matrix),decreasing=TRUE) 
+  df <- data.frame(word = names(words),freq=words)
+  return(df)
+}
 
+# create a corpus with data cleaning
+ctitle <- createCorpus(geoCH$TITLE)
+cabstract <- createCorpus(geoCH$ABSTRACT)
+ckeywords <- createCorpus(geoCH$KEYWORDS)
+
+# create a TermDocumentMatrix
+tdmtitle <- createTermDocumentMatrix(ctitle)
+tdmabstract <- createTermDocumentMatrix(cabstract)
+tdmkeywords <- createTermDocumentMatrix(ckeywords)
+```
+
+```{r,warning=FALSE}
+# create wordcloud
+df <- tdmtitle
+wordcloud(words = df$word, freq = df$freq, min.freq = 10, max.words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(9, "Blues")[3:9])
+```
+
+```{r,warning=FALSE}
+# create wordcloud
+df <- tdmabstract
+wordcloud(words = df$word, freq = df$freq, min.freq = 10, max.words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(9, "Blues")[3:9])
+```
+
+```{r,warning=FALSE}
+# create wordcloud
+df <- tdmkeywords
+wordcloud(words = df$word, freq = df$freq, min.freq = 10, max.words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(9, "Blues")[3:9])
+```
+
+```{r}
+#| fig-cap: Most frequent Terms for Geoservice title 
+#| fig-height: 8
+d <- tdmkeywords[1:50,]
+ggplot(data = d, aes(x=reorder(word,freq), y= freq)) + 
+  geom_bar(stat = "identity",fill=colorPrimary) +
+  geom_text(aes(label = freq), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
+   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
+  coord_flip() +
+   theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
+  labs(title = "Geoservice Titles in Switzerland", subtitle= "Term Frequency",x = NULL,y = "Count",fill="",caption=caption)
+```
+
+```{r}
+#| fig-cap: Most frequent Terms for Geoservice abstract 
+#| fig-height: 8
+d <- tdmabstract[1:50,]
+ggplot(data = d, aes(x=reorder(word,freq), y= freq)) + 
+  geom_bar(stat = "identity",fill=colorPrimary) +
+  geom_text(aes(label = freq), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
+   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
+  coord_flip() +
+   theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
+  labs(title = "Geoservice abstracts in Switzerland", subtitle= "Term Frequency",x = NULL,y = "Count",fill="",caption=caption)
+```
+
+```{r}
+#| fig-cap: Most frequent Terms for Geoservice keywords 
+#| fig-height: 8
+d <- tdmkeywords[1:50,]
+ggplot(data = d, aes(x=reorder(word,freq), y= freq)) + 
+  geom_bar(stat = "identity",fill=colorPrimary) +
+  geom_text(aes(label = freq), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
+   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
+  coord_flip() +
+   theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
+  labs(title = "Geoservice keywords in Switzerland", subtitle= "Term Frequency",x = NULL,y = "Count",fill="",caption=caption)
 ```
