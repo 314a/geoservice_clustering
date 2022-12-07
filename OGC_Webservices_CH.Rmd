@@ -55,14 +55,21 @@ geoservicesCHPath = "https://raw.githubusercontent.com/davidoesch/geoservice_har
 
 # read files
 geoCH <- read.csv(geoCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
-geoSimpleCH <- read.csv(geoSimpleCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
-geoservicesCH <- read.csv(geoservicesCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
+# geoSimpleCH <- read.csv(geoSimpleCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
+# geoservicesCH <- read.csv(geoservicesCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
+
+# Read Spatial data
+cantonShapeFile <- file.path(dataFolder,"BFS_GGG/k4k20.shp")
+lakeShapeFile <- file.path(dataFolder,"BFS_GGG/k4s20.shp")
+cantonSF <- st_read(dsn = cantonShapeFile,stringsAsFactors = FALSE,quiet=TRUE)
+lakesSF<- st_read(dsn = lakeShapeFile,stringsAsFactors = FALSE,quiet=TRUE)
+
 ```
 
 ### Dataset
 
 | Dataset               | Description                                                     |
-|-------------------|-----------------------------------------------------|
+|---------------------|---------------------------------------------------|
 | geoservices_CH.csv    | OGC Services of Switzerland full dataset                        |
 | geodata_simple_CH.csv | OGC Services of Switzerland reduced dataset (Owner, Title, Url) |
 
@@ -71,6 +78,12 @@ id <- sample.int(nrow(geoCH),1) # random service
 d <- data.frame(key=names(geoCH),example=as.character(geoCH[id,]))
 knitr::kable(d, digits = 2,row.names=FALSE, col.names = c("Key","OGC Service Example"),caption = "Field names and OGC Service Value Example", booktabs = TRUE,caption.short = "Random OGC Service")  %>% column_spec(2,width="8 cm") %>%  kable_classic(font_size = 10)
 ```
+
+**Spatial Datasets**
+
+The Federal Statistical office BFS provides generalized boundaries of local and regional authorities. The data sets are particularly suitable for visualising statistical data on communes, districts and cantons as well as for creating small scale maps relating to different topics.
+
+BFS Generalisierte Gemeindegrenzen der Schweiz \[[BFS Generalisierte Gemeindegrenzen der Schweiz 2020](https://www.bfs.admin.ch/bfs/de/home/dienstleistungen/geostat/geodaten-bundesstatistik/administrative-grenzen/generalisierte-gemeindegrenzen.assetdetail.14776419.html),[Dataset](https://www.bfs.admin.ch/bfsstatic/dam/assets/14776419/master)\]
 
 ### Distribution of Content by Service Owners
 
@@ -114,5 +127,214 @@ ggplot(data = d, aes(x=layers, y= links)) +
   # geom_text(aes(label = OWNER), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
   geom_text_repel(mapping = aes(x = layers,y = links,label = OWNER),size = 2.4,min.segment.length = 0,point.padding = 0.5,segment.color = "grey30", max.overlaps=13)+ scale_y_continuous(trans = "log10")+
   themeReport +labs(x = "Number of Layers",y = "Number of Service Links",title = "Number of Service Url vs Layers", caption=caption)
+
+```
+
+## Spatial Coverage of Geoservices
+
+```{r}
+# create bounding boxes from services
+
+# convert bounding box string to a polgon 
+# eg. "2740443.137 1232276.032 2765413.73 1258037.171 EPSG:2056"
+# https://github.com/r-spatial/sf/issues/1034
+str2BBox <- function(bboxString){
+  i = 0
+  res <- lapply(bboxString,function(str){
+    i <- i +1
+    # extract coordinates and EPSG Code
+    x <- unlist(strsplit(str ," "))
+    x <- x[x != ""] # remove empty strings
+    # return an empty polygon if coordinates are missing
+    if(length(x)==0){return(st_polygon())} 
+    # epsg <- as.numeric(unlist(strsplit(x[5] ,":"))[2])
+    x <- as.numeric(x[1:4])
+    if(anyNA(x)){cat(i,": ",x,"has NA")}
+    # create a bounding box polygon
+    x <- st_polygon(list(cbind(
+          c(x[1],x[3],x[3],x[1],x[1]), # x coords 
+          c(x[2],x[2],x[4],x[4],x[2])  # y coords
+          )))
+    return(x)
+  })
+  return(res)
+}
+
+# extract coordinates and EPSG Code
+# eg. "2740443.137 1232276.032 2765413.73 1258037.171 EPSG:2056"
+str2EPSG <- function(bboxString){
+  res <- lapply(bboxString,function(str){
+    epsg <- as.numeric(unlist(strsplit(str,":"))[2])
+    return(epsg)
+  })
+  return(unlist(res))
+}
+```
+
+```{r}
+# generate sf bounding boxes
+geoBBox <- str2BBox(geoCH[,"BBOX"])
+geoEPSG <- str2EPSG(geoCH$BBOX)
+geoBBoxStr <- lapply(geoBBox,st_as_text)
+
+geoCHSF <- st_sf(geoCH,geoBBox)
+geoCHSF$epsg <- str2EPSG(geoCH$BBOX)
+geoCHSF$isEmpty <- st_is_empty(geoCHSF) # which polygons have no geometries
+
+geoCH$epsg <- str2EPSG(geoCH$BBOX)
+geoCH$isEmpty <- st_is_empty(geoCHSF) # which polygons have no geometries
+# geoCH$bboxStr <- lapply(geoBBox,st_as_text)
+```
+
+```{r}
+# EPSG Count
+d <- geoCH %>% group_by(epsg) %>% summarise(epsg = first(unique(epsg)), n = n())
+knitr::kable(d, digits = 2,row.names=FALSE,caption = "Frequency of CRS provided for Geoservies in CH (epsg)", booktabs = TRUE,caption.short = "EPSG")  %>% column_spec(2,width="8 cm") %>%  kable_classic(font_size = 12)
+```
+
+```{r}
+#| fig-cap: Frequency of CRS provided for Geoservies in CH (epsg)
+#| fig-height: 6
+
+ggplot(data = d, aes(x=reorder(epsg,n), y= n)) + 
+  geom_bar(stat = "identity",fill=colorPrimary) +
+  geom_text(aes(label = n), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
+   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
+  coord_flip() +
+   theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
+  labs(title = "Distribution of CRS by Dataset", subtitle= "Frequency of EPSG Occurence",x = NULL,y = "Count",fill="",caption=caption)
+
+```
+
+```{r}
+# create bounding boxes from services
+bboxstr <- "2740443.137 1232276.032 2765413.73 1258037.171 EPSG:2056"
+
+str2BBox <- function(str){
+  x <- unlist(strsplit(str ," "))
+  epsg <- as.numeric(unlist(strsplit(x[5] ,":"))[2])
+  x <- as.numeric(x[1:4])
+  # create the geometry sfc column
+  # with a lit of multiple boundingboxes
+  # 
+  bbox <- st_sfc(st_polygon(list(cbind(
+    c(x[1],x[3],x[3],x[1],x[1]), # x coords 
+    c(x[2],x[2],x[4],x[4],x[2])  # y coords
+    ))),crs = epsg)
+  
+  p <- st_multipoint(rbind(c(x[1],x[2]),c(x[3],x[4])))
+  bbox <- st_as_sfc(st_bbox(p)) 
+  st_crs(bbox) <- epsg
+  
+  # create a bounding box class of a named vector
+  names(x) <- c("xmin" ,"ymin", "xmax", "ymax")
+  class(x) <- "bbox"
+  bbox <- st_as_sfc(x)
+    st_crs(bbox) <- epsg
+  
+
+  pt1 = st_point(c(0,1))d = st_sf(data.frame(a=1:2, geom=sfc))
+  
+  # bbox <- st_bbox(c(xmin = as.numeric(x[1]), xmax = as.numeric(x[3]), ymax = as.numeric(x[4]), ymin = as.numeric(x[2])), crs = st_crs(epsg))
+  return(bbox)
+}
+
+# convert bounding box string to a polgon 
+# eg. "2740443.137 1232276.032 2765413.73 1258037.171 EPSG:2056"
+# https://github.com/r-spatial/sf/issues/1034
+str2BBox <- function(bboxString){
+  i = 0
+  res <- lapply(bboxString,function(str){
+    i <- i +1
+    # extract coordinates and EPSG Code
+    x <- unlist(strsplit(str ," "))
+    x <- x[x != ""] # remove empty strings
+    if(length(x)==0){return(st_polygon())} # return an empty polygon if coordinates are missing
+    # epsg <- as.numeric(unlist(strsplit(x[5] ,":"))[2])
+    x <- as.numeric(x[1:4])
+    if(anyNA(x)){cat(i,": ",x,"has NA")}
+    # create a bounding box polygon
+    x <- st_polygon(list(cbind(
+          c(x[1],x[3],x[3],x[1],x[1]), # x coords 
+          c(x[2],x[2],x[4],x[4],x[2])  # y coords
+          )))
+    return(x)
+  })
+  return(res)
+}
+# extract coordinates and EPSG Code
+# eg. "2740443.137 1232276.032 2765413.73 1258037.171 EPSG:2056"
+str2EPSG <- function(bboxString){
+  res <- lapply(bboxString,function(str){
+    epsg <- as.numeric(unlist(strsplit(str,":"))[2])
+    return(epsg)
+  })
+  return(unlist(res))
+}
+
+
+# create a bounding box class of a named vector
+#names(x) <- c("xmin" ,"ymin", "xmax", "ymax")
+#class(x) <- "bbox"   
+#return( st_as_sfc(x))
+
+
+bboxSF <- str2BBox(bboxstr)
+
+y <- str2BBox(c(bboxstr,bboxstr))
+ye <- str2EPSG(c(bboxstr,bboxstr))
+
+
+d = st_sf(data.frame(a=1:2), geometry=y)
+
+
+t <- geoCH[209,"BBOX"]
+
+geoBBox <- str2BBox(geoCH[9780:9785,"BBOX"])
+geoBBox <- str2BBox(geoCH[,"BBOX"])
+geoEPSG <- str2EPSG(geoCH$BBOX)
+
+
+geoCHSF <- st_sf(geoCH,geoBBox)
+geoCHSF$epsg <- str2EPSG(geoCH$BBOX)
+geoCHSF$isEmpty <- st_is_empty(geoCHSF)
+
+st_is_empty(d)
+
+
+
+```
+
+```{r}
+dsf <- geoCHSF %>% filter(epsg==2056)
+st_crs(dsf) <- 2056
+ggplot() + themeReport  +
+  geom_sf(data = cantonSF,fill=NA, colour="#cccccc",size=0.25) +
+  geom_sf(data = lakesSF, fill="#a6cee3", color="#a6cee3",alpha=0.6,size=0.25) +
+  geom_sf(data = dsf,fill=NA, colour="#ff660020",size=0.25) +
+  labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes",fill = "",x = NULL,y = NULL,colour="", caption=paste(caption,", BFS",sep=""))+coord_sf(datum = NA)
+```
+
+```{r}
+
+dsf <- geoCHSF %>% filter(epsg==2056)
+st_crs(dsf) <- 2056
+# bbox of switzerland
+# st_bbox(cantonSF)
+# 2485202 1075281 2834036 1295864 
+# 2400000 1000000 2850000 1300000 
+
+
+box = c(xmin = 2400000, ymin = 1000000, xmax = 2850000, ymax = 1300000)
+dsf <- st_crop(dsf,box )
+
+
+ggplot() + themeReport  +
+  geom_sf(data = cantonSF,fill=NA, colour="#cccccc",size=0.25) +
+  geom_sf(data = lakesSF, fill="#a6cee3", color="#a6cee3",alpha=0.6,size=0.25) +
+  geom_sf(data = dsf,fill=NA, colour="#ff660020",size=0.25,alpha=0.01) +
+  labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes",fill = "",x = NULL,y = NULL,colour="", caption=paste(caption,", BFS",sep=""))+coord_sf(datum = NA)
+
+
 
 ```
