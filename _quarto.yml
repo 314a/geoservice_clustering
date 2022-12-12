@@ -1,0 +1,14 @@
+project:
+  type: book
+  output-dir: docs
+  
+book:
+  title: "Geoservice Clustering CH"
+  author: "Institut Geomatik, FHNW"
+  date: "09.12.22"
+  chapters:
+    - index.qmd
+
+format:
+  html:
+    theme: cosmo
