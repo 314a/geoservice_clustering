@@ -1,6 +1,7 @@
 ---
 title: "Open OGC Geoservices in Switzerland"
 subtitle: "Exploratory Analysis of the available OGC services"
+date: today
 output-dir: docs
 format:
   html:
@@ -12,7 +13,7 @@ execute:
   message: false
 ---
 
-## OGC Webservices in Switzerland
+# OGC Webservices in Switzerland
 
 This document explores the OGC webservices provided by the various public open data provider. These OGC webservices are publicly available and provide broad and well maintained metadata of the content they portray.
 
@@ -52,30 +53,35 @@ caption <- "Data Source: OGC Webservices Switzerland"
 
 ```{r readdata}
 # Set file paths
-geoCHPath = "https://raw.githubusercontent.com/davidoesch/geoservice_harvester_poc/main/data/geoservices_CH.csv"
-geoSimpleCHPath = "https://raw.githubusercontent.com/davidoesch/geoservice_harvester_poc/main/data/geodata_simple_CH.csv"
-geoservicesCHPath = "https://raw.githubusercontent.com/davidoesch/geoservice_harvester_poc/main/data/geoservices_CH.csv" # TODO chec if duplicate of geoCHPath
+# Read CSV from GitHub Repositories: 
+# replace github.com with raw.githubusercontent.com and remove blob/ in the url
+# geoCHPath = "https://raw.githubusercontent.com/davidoesch/geoservice_harvester_poc/main/data/geoservices_CH.csv"
+geoCHPath = "https://raw.githubusercontent.com/FHNW-IVGI/Geoharvester/main/scraper/data/geoservices_CH.csv"
+
+# local file
+# geoCHPath <- file.path(dataFolder,"geoservices_CH.csv")
 
 # read files
 geoCH <- read.csv(geoCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
-# geoSimpleCH <- read.csv(geoSimpleCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
-# geoservicesCH <- read.csv(geoservicesCHPath, stringsAsFactors = FALSE, encoding="UTF-8")
+
+# Entferne ungültig endpoints
+geoCH <- geoCH %>% mutate(endpointInvalid = is.na(endpoint)| endpoint=="")
+geoCH <- geoCH %>% filter(!endpointInvalid)
 
 # Read Spatial data
 cantonShapeFile <- file.path(dataFolder,"BFS_GGG/k4k20.shp")
 lakeShapeFile <- file.path(dataFolder,"BFS_GGG/k4s20.shp")
 cantonSF <- st_read(dsn = cantonShapeFile,stringsAsFactors = FALSE,quiet=TRUE)
-lakesSF<- st_read(dsn = lakeShapeFile,stringsAsFactors = FALSE,quiet=TRUE)
-
+lakesSF <- st_read(dsn = lakeShapeFile,stringsAsFactors = FALSE,quiet=TRUE)
 ```
 
-### Dataset
+## Dataset
 
-| Dataset               | Description                                                     |
-|---------------------|---------------------------------------------------|
-| geoservices_CH.csv    | OGC Services of Switzerland full dataset                        |
-| geodata_simple_CH.csv | OGC Services of Switzerland reduced dataset (Owner, Title, Url) |
+| Dataset             | Description                                   |
+|---------------------|-----------------------------------------------|
+| geoservices_CH.csv  | OGC Services of Switzerland full dataset      |
 
+Random Example of a dataset
 ```{r}
 id <- sample.int(nrow(geoCH),1) # random service
 d <- data.frame(key=names(geoCH),example=as.character(geoCH[id,]))
@@ -88,57 +94,205 @@ The Federal Statistical office BFS provides generalized boundaries of local and 
 
 BFS Generalisierte Gemeindegrenzen der Schweiz \[[BFS Generalisierte Gemeindegrenzen der Schweiz 2020](https://www.bfs.admin.ch/bfs/de/home/dienstleistungen/geostat/geodaten-bundesstatistik/administrative-grenzen/generalisierte-gemeindegrenzen.assetdetail.14776419.html),[Dataset](https://www.bfs.admin.ch/bfsstatic/dam/assets/14776419/master)\]
 
-### Distribution of Content by Service Owners
+## Distribution of Content by Service Owners
 
 How many layers do the various service provider offer? How are the services structured?
 
 ```{r}
-d <- geoCH %>% group_by(OWNER) %>% summarise(layers = length(unique(NAME)), links = length(unique(SERVICELINK)))
+d <- geoCH %>% group_by(provider) %>% summarise(layers = length(unique(name)), links = length(unique(endpoint)))
+d$provider <- gsub("KT_","",d$provider)
+d$provider <- gsub("FL_","",d$provider)
+
+# nrow(geoCH)
+# sum(d$layers)
 ```
 
+Anzahl eindeutige Layernamen nach provider `r `sum(d$layers)` und ein total an Datensätzen `r nrow(geoCH)`
+
 ```{r}
-#| fig-cap: Number of Layers provided by each service owner 
-#| fig-height: 6
-ggplot(data = d, aes(x=reorder(OWNER,layers), y= layers)) + 
+#| fig-cap: Number of unique Layers provided by each service owner 
+#| fig-height: 5
+plot1 <- ggplot(data = d, aes(x=reorder(provider,layers), y= layers)) + 
   geom_bar(stat = "identity",fill=colorPrimary) +
-  geom_text(aes(label = layers), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
-   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
+  geom_text(aes(label = layers), nudge_y = 2,size=3, color = "black", hjust = -0.2) +
+  scale_y_continuous(expand = expansion(mult = c(0, .08)))+
   coord_flip() +
-   theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
-  labs(title = "Distribution of Content by Service Owners", subtitle= "Number of layers by Service Owner",x = NULL,y = "Number of Layers",fill="",caption=caption)
+  theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
+  # labs(title = "Verteilung des Geodiensteangebots", subtitle= "Anzahl Geodatenlayer nach Provider",
+       # x = NULL,y = "Anzahl eindeutige Layer",fill="",caption=caption)
+  labs(title = "Distribution of Content by Service Provider", subtitle= "Number of layers by Service Provider",
+       x = NULL,y = "Number of Layers",fill="",caption=caption)
 ```
 
 ```{r}
 #| fig-cap: Number of unique service links provided by each service owner 
 #| fig-height: 6
-ggplot(data = d, aes(x=reorder(OWNER,links), y= links)) + 
+plot2 <- ggplot(data = d, aes(x=reorder(provider,links), y= links)) + 
   geom_bar(stat = "identity",fill=colorPrimary) +
   geom_text(aes(label = links), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
-   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
+  scale_y_continuous(expand = expansion(mult = c(0, .08)))+
   coord_flip() +
-   theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
-  labs(title = "Distribution of Service Links", subtitle= "Number of Service Links by Service Owner",x = NULL,y = "Number of Service Links",fill="",caption=caption)
-
+  theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
+  # labs(title = "Verteilung der Geodatenserver", subtitle= "Anzahl Service Endpoints nach Provider",
+       # x = NULL,y = "Anzahl Service Endpoints",fill="",caption=caption)
+  labs(title = "Distribution of Service Endpoints", subtitle= "Number of Service Endpoints by Service Provider",
+       x = NULL,y = "Number of Service Endpoints",fill="",caption=caption)
 ```
 
 ```{r}
-#| fig-cap: Number of unique service links provided by each service owner 
+#| fig-cap: a) Number of Layers provided by each service owner, b) Number of unique service links provided by each service owner 
 #| fig-height: 6
-
-ggplot(data = d, aes(x=layers, y= links)) + 
-  geom_point(size=1,color=colorPrimary)+
-  # geom_text(aes(label = OWNER), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
-  geom_text_repel(mapping = aes(x = layers,y = links,label = OWNER),size = 2.4,min.segment.length = 0,point.padding = 0.5,segment.color = "grey30", max.overlaps=13)+ scale_y_continuous(trans = "log10")+
-  themeReport +labs(x = "Number of Layers",y = "Number of Service Links",title = "Number of Service Url vs Layers", caption=caption)
-
+library(cowplot)
+plot_grid(plot1, plot2, labels = c('a)', 'b)'), label_size = 10, label_y=0.01, label_fontface = "plain")
 ```
 
-## Spatial Coverage of Geoservices
+
+
+```{r}
+#| fig-cap: Number of unique service links provided by each service owner 
+#| fig-height: 4
+ggplot(data = d, aes(x=layers, y= links)) + 
+  geom_point(size=1,color=colorPrimary)+
+  # geom_text(aes(label = provider), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
+  geom_text_repel(mapping = aes(x = layers,y = links,label = provider),size = 2.4,
+                  min.segment.length = 0,point.padding = 0.5,segment.color = "grey30", max.overlaps=13) + 
+  scale_y_continuous(trans = "log10") +
+  # themeReport +labs(x = "Anzahl Layer",y = "Anzahl Service Endpoints",
+                    # title = "Vergleich der Anzahl Layer zu Service Endpoints", caption=caption)
+  themeReport +labs(x = "Number of Layers",y = "Number of Service Endpoints",
+                    title = "Number of Service Endpoints vs Layers", caption=caption)
+```
+# Metadata
+Completeness of metadata description for OGC Web Services in Switzerland
+
+```{r}
+# Explorative filter Tests with search for keywords with str_detect
+# geoCH %>% filter(str_detect(contact, 'deutschkurse|rebbau'))
+# geoCH %>% filter(str_detect(keywords, 'wfs|wms|wmts'))
+# geoCH %>% filter(str_detect(provider, 'Geodienste')) %>% select(provider,contact,title) %>% head()
+# https://ows.geo.tg.ch/geofy_access_proxy/deutschkurse/?service=wms&request=GetCapabilities
+
+
+# Dienstmetadaten enthalten: Title, Abstrakt (mit mehr als X Buchstaben), Keywords, URL zu Metadaten, Kontaktdaten
+library(stringr)
+# abstract
+geoCH$metaAbstract <- nchar(geoCH$abstract)
+geoCH$metaAbstractWordCount <- str_count(geoCH$abstract, '\\w+')
+# keywords
+# remove "null, ", "null" entries
+geoCH$metaKeywords <- gsub("n.a.","",geoCH$keywords)
+geoCH$metaKeywords <- gsub("null, ","",geoCH$metaKeywords)
+geoCH$metaKeywords <- gsub("null","",geoCH$metaKeywords)
+geoCH$metaKeywordsFilled <- nchar(geoCH$metaKeywords)
+# remove urls in keywords
+geoCH$metaKeywords <- gsub("(f|ht)tp(s?)://\\S+", "", geoCH$keywords, perl=T) # remove url
+# detect urls in Keywords
+geoCH$metaKeywordsURL <- str_count(geoCH$keywords, '(f|ht)tp(s?)://\\S+')
+# detect keywordlist identifier in keywords (Bund) e.g. ch.swisstopo-karto.hangneigung.wms_ows_keywordlist
+geoCH$metaKeywordsList <- str_count(geoCH$keywords, 'keywordlist')
+# count keywords by comma separation
+geoCH$metaKeywordsCountComma <- str_count(geoCH$metaKeywords, ",")
+geoCH$metaKeywordsCountComma <- ifelse(geoCH$metaKeywordsCountComma>0,geoCH$metaKeywordsCountComma+1,geoCH$metaKeywordsCountComma)
+# count keywords by word detection
+# problem is that it counts the following ch.bafu.something as 3
+geoCH$metaKeywordsCountWord <- str_count(geoCH$metaKeywords, '\\w+')
+geoCH$metaMetadata <- nchar(geoCH$metadata)
+
+# contact information 
+# not sure if it's depicted correctly as many entries contain urls 
+# leading to nowhere
+geoCH$metaContact <- gsub("n.a.","",geoCH$contact)
+geoCH$metaContact <- nchar(geoCH$metaContact)
+geoCH$metaContactCountAt <- str_count(geoCH$contact, "@")
+
+# test counts with random rows in the dataset
+# geoCH %>% select(abstract,metaAbstractWordCount) %>% filter(nchar(abstract)>0) %>% sample_n(8)
+# geoCH %>% select(keywords,metaKeywordsCount,metaKeywordsCount2) %>% filter(nchar(keywords)>0) %>% sample_n(8)
+# geoCH %>% select(keywords,metaKeywordsURL,metaKeywordsFilled) %>% filter(nchar(metaKeywordsFilled)>0) %>% sample_n(8)
+# geoCH %>% select(contact,metaContact,metaContactCountAt) %>% filter(nchar(contact)>0) %>% sample_n(30)
+# dbund <- geoCH %>% select(title,provider, keywords,metaKeywordsCount,metaKeywordsCount2,metaKeywordsURL,metaKeywordsList) %>% filter(provider=="Bund",nchar(keywords)>0)
+
+dMeta <- geoCH %>% group_by(provider)  %>% summarise(
+  n=n(),
+  abstract = sum(abstract>0),
+  keywords = sum(metaKeywordsFilled>0),
+  keywordsURL = sum(metaKeywordsURL>0),
+  keywordsList = sum(metaKeywordsList>0),
+  keywordsURLList = sum(metaKeywordsList>0|metaKeywordsURL>0),
+  abstractWordsMedian0 = median(metaAbstractWordCount,na.rm=T), # mit leeren Abstracts
+  abstractWordsMedian = median(metaAbstractWordCount[metaAbstractWordCount>0],na.rm=T),
+  keywordsMedian0 = median(metaKeywordsCountComma,na.rm=T),
+  keywordsMedianURL = median(metaKeywordsURL+keywordsList,na.rm=T),
+  # if clause for providers with no valid keyword count
+  keywordsMedian = ifelse(length(metaKeywordsCountComma[metaKeywordsCountComma>0])>0,median(metaKeywordsCountComma[metaKeywordsCountComma>0],na.rm=T),0),
+  contact = sum(metaContact>0),
+  contactAt = sum(metaContactCountAt>0),
+  abstractPerc = abstract/n*100,
+  keywordsPerc = keywords/n*100,
+  keywordsURLListPerc = keywordsURLList/n*100,
+  contactPerc = contact/n*100,
+  contactAtPerc = contactAt/n*100,
+) %>% as.data.frame()
+
+dMeta$provider <- gsub("KT_","",dMeta$provider)
+dMeta$provider <- gsub("FL_","",dMeta$provider)
+levelProvider <- c(dMeta$provider[-which(dMeta$provider=="LI")],dMeta$provider[which(dMeta$provider=="LI")])  # umsortieren mit LI am Ende
+dMeta$provider <- factor(dMeta$provider, level = levelProvider)
+```
+
+```{r}
+#| fig-cap: Metadata coverage per service provider
+#| fig-height: 6
+# names(dMeta) <- c("provider", "n", "abstract","Keywords", "2 Keywords", "Contact", "Contact Email", "abstractPerc", "Keywords %", "2 Keywords %", "Kontaktangaben %","Email %")
+dLong <- dMeta %>% pivot_longer(cols=c("abstractPerc"  , "keywordsPerc" ,  "contactPerc"), names_to = "key", values_to = "values") %>% 
+  mutate(key = str_replace(key, "abstractPerc", "Abstract filled %"),
+         key = str_replace(key, "keywordsPerc", "Keywords filled %"),
+         key = str_replace(key, "contactPerc", "Contact filled %")) %>% as.data.frame()
+
+dLong2 <- dMeta %>% pivot_longer(cols=c("abstractWordsMedian"  , "keywordsMedian" ,"keywordsURLListPerc",  "contactAtPerc"), names_to = "key", values_to = "values") %>% 
+  mutate(key = str_replace(key, "abstractWordsMedian", "Abstract Wordcount Median"),
+         key = str_replace(key, "keywordsMedian", "Keywords Wordcount Median"),
+         key = str_replace(key, "keywordsURLListPerc", "Keywords URL %"),
+         key = str_replace(key, "contactAtPerc", "Email %")) %>% as.data.frame()
+```
+
+```{r}
+#| fig-cap: Metadata usage in OGC Web Servics Switzerland, percentage of abstrace, keywords and contact information filled for each data provider
+#| fig-height: 6
+ggplot(data = dLong, aes(x=provider, y= values)) + 
+  geom_bar(stat = "identity",fill=colorPrimary) +
+  # geom_text(aes(label = format(values, digits=1, nsmall=1)), nudge_y = 2,size=3, color = "black",hjust = 0)+
+  # scale_y_continuous(expand = expansion(mult = c(0, .01)), limits = c(0,100))+
+  coord_flip() + 
+  scale_x_discrete(limits = rev(unique(sort(dLong$provider))))+
+   theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank(),strip.background = element_rect(fill = "white"))+
+  facet_wrap(~factor(key, c("Abstract filled %", "Keywords filled %", "Contact filled %")),nrow=1) +
+  # labs(title = "Metadaten", subtitle= "Verwendung von Metadatenfeldern im OWS",x = NULL,y = NULL,fill="",caption=caption)
+  labs(title = "Metadata", subtitle= "Usage of metadata fields in OWS",x = NULL,y = NULL,fill="",caption=caption)
+```
+
+```{r}
+#| fig-cap: Metadata usage in OGC Web Servics Switzerland, Median Wordcount for abstract and keywords, percentage of keyword entries that contain an url or an identifier, and percentage of email addresses provided in the contact fields for each provider
+#| fig-height: 6
+ggplot(data = dLong2, aes(x=provider, y= values)) + 
+  geom_bar(stat = "identity",fill=colorPrimary) +
+  # geom_text(aes(label = format(values, digits=1, nsmall=1)), nudge_y = 2,size=3, color = "black",hjust = 0)+
+  scale_y_continuous(expand = expansion(mult = c(0, .1)))+
+  coord_flip() + 
+  scale_x_discrete(limits = rev(unique(sort(dLong$provider))))+
+   theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank(),strip.background = element_rect(fill = "white"))+
+  # facet_wrap(~key,nrow=1, scales = "free_x")+
+  facet_wrap(~factor(key, c("Abstract Wordcount Median", "Keywords Wordcount Median", "Keywords URL %", "Email %")),nrow=1, scales = "free_x")+
+  labs(title = "Metadata", subtitle= "Usage of metadata fields in OWS",x = NULL,y = NULL,fill="",caption=caption)
+  # labs(title = "Metadaten", subtitle= "Verwendung der Metadatenfeldern in OWS",x = NULL,y = NULL,fill="",caption=caption)
+```
+
+# Spatial Coverage of Geoservices
 
 ```{r}
 # create bounding boxes from services
 
-# convert bounding box string to a polgon 
+# convert bounding box string to a polygon 
 # eg. "2740443.137 1232276.032 2765413.73 1258037.171 EPSG:2056"
 # https://github.com/r-spatial/sf/issues/1034
 str2BBox <- function(bboxString){
@@ -175,30 +329,44 @@ str2EPSG <- function(bboxString){
 ```
 
 ```{r}
+# generate sf bounding boxes from bbox string as epsg
+geoBBox <- str2BBox(geoCH[,"bbox"])
+geoBBoxStr <- lapply(geoBBox,st_as_text)
+geoCHSF <- st_sf(geoCH,geoBBox)
+geoCHSF$epsg <- 4326
+geoCH$epsg <- 4326
+geoCHSF$isEmpty <- st_is_empty(geoCHSF) # which polygons have no geometries
+
+dsf <- geoCHSF %>% filter(epsg==4326)
+st_crs(dsf) <- 4326 
+dsf <- st_transform(dsf, 2056)
+
+```
+
+```{r, eval=FALSE}
 # generate sf bounding boxes
-geoBBox <- str2BBox(geoCH[,"BBOX"])
-geoEPSG <- str2EPSG(geoCH$BBOX)
+geoBBox <- str2BBox(geoCH[,"bbox"])
+geoEPSG <- str2EPSG(geoCH$bbox)
 geoBBoxStr <- lapply(geoBBox,st_as_text)
 
 geoCHSF <- st_sf(geoCH,geoBBox)
-geoCHSF$epsg <- str2EPSG(geoCH$BBOX)
+geoCHSF$epsg <- str2EPSG(geoCH$bbox)
 geoCHSF$isEmpty <- st_is_empty(geoCHSF) # which polygons have no geometries
 
-geoCH$epsg <- str2EPSG(geoCH$BBOX)
+geoCH$epsg <- str2EPSG(geoCH$bbox)
 geoCH$isEmpty <- st_is_empty(geoCHSF) # which polygons have no geometries
 # geoCH$bboxStr <- lapply(geoBBox,st_as_text)
 ```
 
-```{r}
+```{r, eval=FALSE}
 # EPSG Count
 d <- geoCH %>% group_by(epsg) %>% summarise(epsg = first(unique(epsg)), n = n())
 knitr::kable(d, digits = 2,row.names=FALSE,caption = "Frequency of CRS provided for Geoservies in CH (epsg)", booktabs = TRUE,caption.short = "EPSG")  %>% column_spec(2,width="8 cm") %>%  kable_classic(font_size = 12)
 ```
 
-```{r}
+```{r, eval=FALSE}
 #| fig-cap: Frequency of CRS provided for Geoservies in CH (epsg)
 #| fig-height: 2
-
 ggplot(data = d, aes(x=reorder(epsg,n), y= n)) + 
   geom_bar(stat = "identity",fill=colorPrimary) +
   geom_text(aes(label = n), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
@@ -209,20 +377,22 @@ ggplot(data = d, aes(x=reorder(epsg,n), y= n)) +
 
 ```
 
-```{r}
-dsf <- geoCHSF %>% filter(epsg==2056)
-st_crs(dsf) <- 2056
+```{r, eval=FALSE}
+# dsf <- geoCHSF %>% filter(epsg==2056)
+# st_crs(dsf) <- 2056
+
 ggplot() + themeReport  +
   geom_sf(data = cantonSF,fill=NA, colour="#cccccc",size=0.25) +
   geom_sf(data = lakesSF, fill="#a6cee3", color="#a6cee3",alpha=0.6,size=0.25) +
   geom_sf(data = dsf,fill=NA, colour="#ff660020",size=0.25) +
-  labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes with EPSG 2056",fill = "",x = NULL,y = NULL,colour="", caption=paste(caption,", BFS",sep=""))+coord_sf(datum = NA)
+  labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes",fill = "",x = NULL,y = NULL,colour="", caption=paste(caption,", BFS",sep=""))+coord_sf(datum = NA)
 ```
 
 ```{r}
-
-dsf <- geoCHSF %>% filter(epsg==2056)
-st_crs(dsf) <- 2056
+#| fig-cap: Spatial Coverage of the bounding boxes for all the provided datasets with the map extent set to Switzerland. Extends exceeding these bounds are not depicted.
+#| fig-height: 6
+# dsf <- geoCHSF %>% filter(epsg==2056)
+# st_crs(dsf) <- 2056
 # bbox of switzerland
 # st_bbox(cantonSF)
 # 2485202 1075281 2834036 1295864 
@@ -236,10 +406,12 @@ dsf <- st_crop(dsf,box )
 ggplot() + themeReport  +
   geom_sf(data = cantonSF,fill=NA, colour="#cccccc",size=0.25) +
   geom_sf(data = lakesSF, fill="#a6cee3", color="#a6cee3",alpha=0.6,size=0.25) +
-  geom_sf(data = dsf,fill=NA, colour="#ff660020",size=0.25,alpha=0.01) +
-  labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes with EPSG 2056",fill = "",x = NULL,y = NULL,colour="", caption=paste(caption,", BFS",sep=""))+coord_sf(datum = NA)
+  geom_sf(data = dsf,fill=NA, colour="#ff660020",size=0.25,alpha=0.005) +
+  labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes with EPSG 2056",fill = "",x = NULL,y = NULL,colour="", caption=paste("Map extent set to Switzerland, ",caption,", BFS",sep=""))+coord_sf(datum = NA)
 
 ```
+# Word Clouds
+Word clouds generated for OGC Web Services metadata entries title, abstract and keywords. URLs and identifiers are filtered out for better depiction of word usage rather than repetitive urls.
 
 ```{r}
 # generate word cloud from service title, abstract, keywords
@@ -249,7 +421,11 @@ library(RColorBrewer)
 # function to create a clean text corpus
 createCorpus <- function(text){
   docs <- Corpus(VectorSource(text))
+  # remove url from text
+  # https://stackoverflow.com/questions/41109773/gsub-function-in-tm-package-to-remove-urls-does-not-remove-the-entire-string
+  removeURL <- content_transformer(function(x) gsub("(f|ht)tp(s?)://\\S+", "", x, perl=T))
   docs <- docs %>%
+    tm_map(removeURL) %>% 
     tm_map(removeNumbers) %>%
     tm_map(removePunctuation) %>%
     tm_map(stripWhitespace)
@@ -270,9 +446,9 @@ createTermDocumentMatrix <- function(docs){
 }
 
 # create a corpus with data cleaning
-ctitle <- createCorpus(geoCH$TITLE)
-cabstract <- createCorpus(geoCH$ABSTRACT)
-ckeywords <- createCorpus(geoCH$KEYWORDS)
+ctitle <- createCorpus(geoCH$title)
+cabstract <- createCorpus(geoCH$abstract)
+ckeywords <- createCorpus(geoCH$keywords)
 
 # create a TermDocumentMatrix
 tdmtitle <- createTermDocumentMatrix(ctitle)
@@ -281,27 +457,34 @@ tdmkeywords <- createTermDocumentMatrix(ckeywords)
 ```
 
 ```{r,warning=FALSE}
+#| fig-cap: Word Cloud for word frequency of OGC Web Services titles
+#| fig-height: 4
 # create wordcloud
 df <- tdmtitle
 wordcloud(words = df$word, freq = df$freq, min.freq = 10, max.words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(9, "Blues")[3:9])
 ```
 
 ```{r,warning=FALSE}
+#| fig-cap: Word Cloud for word frequency of OGC Web Services abstracts
+#| fig-height: 4
 # create wordcloud
 df <- tdmabstract
 wordcloud(words = df$word, freq = df$freq, min.freq = 10, max.words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(9, "Blues")[3:9])
 ```
 
 ```{r,warning=FALSE}
+#| fig-cap: Word Cloud for word frequency of OGC Web Services keywords, omitting urls and identifiers
+#| fig-height: 4
 # create wordcloud
 df <- tdmkeywords
 wordcloud(words = df$word, freq = df$freq, min.freq = 10, max.words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(9, "Blues")[3:9])
 ```
 
+
 ```{r}
 #| fig-cap: Most frequent Terms for Geoservice title 
-#| fig-height: 8
-d <- tdmkeywords[1:50,]
+#| fig-height: 6
+d <- tdmtitle[1:50,]
 ggplot(data = d, aes(x=reorder(word,freq), y= freq)) + 
   geom_bar(stat = "identity",fill=colorPrimary) +
   geom_text(aes(label = freq), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
@@ -313,8 +496,8 @@ ggplot(data = d, aes(x=reorder(word,freq), y= freq)) +
 
 ```{r}
 #| fig-cap: Most frequent Terms for Geoservice abstract 
-#| fig-height: 8
-d <- tdmabstract[1:50,]
+#| fig-height: 4
+d <- tdmabstract[1:25,]
 ggplot(data = d, aes(x=reorder(word,freq), y= freq)) + 
   geom_bar(stat = "identity",fill=colorPrimary) +
   geom_text(aes(label = freq), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
@@ -326,8 +509,10 @@ ggplot(data = d, aes(x=reorder(word,freq), y= freq)) +
 
 ```{r}
 #| fig-cap: Most frequent Terms for Geoservice keywords 
-#| fig-height: 8
-d <- tdmkeywords[1:50,]
+#| fig-height: 4
+
+d <- tdmkeywords %>% filter(str_detect(word, 'http',negate=T)) 
+d <- d[1:25,]
 ggplot(data = d, aes(x=reorder(word,freq), y= freq)) + 
   geom_bar(stat = "identity",fill=colorPrimary) +
   geom_text(aes(label = freq), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
