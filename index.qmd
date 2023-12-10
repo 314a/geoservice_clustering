@@ -15,9 +15,7 @@ execute:
 
 # OGC Webservices in Switzerland
 
-This document explores the OGC webservices provided by the various public open data provider. These OGC webservices are publicly available and provide broad and well maintained metadata of the content they portray.
-
-This analysis is based on the harvested OGC web services (WMS, WMTS, WFS) of Switzerland by the following repository: <https://github.com/davidoesch/geoservice_harvester_poc> by [David Oesch](https://github.com/davidoesch). The *geoservice harvester* crawls the known OGC web services managed by the state, cantons and communes.
+This document explores the OGC webservices provided by the various public open data provider. These OGC webservices are publicly available and provide broad and well maintained metadata of the content they portray. The analysis is based on the harvested OGC Web Services (WMS, WMTS, WFS) of Switzerland in <https://github.com/FHNW-IVGI/Geoharvester> initiated by <https://github.com/davidoesch/geoservice_harvester_poc> by [David Oesch](https://github.com/davidoesch). The *GeoHarvester* crawls the known OGC web services managed by the state, cantons and communes.
 
 ```{r directorySetup,comment=FALSE, message = FALSE, echo=FALSE,warning=FALSE}
 # rm(list=ls())         # Clean the environment (comment out, if batch script)
