@@ -29,6 +29,7 @@ library(knitr)          # set global knitr options of the document
 library(rgdal)# install.packages("rgdal") # install libraries
 library(dplyr)
 library(tidyr)
+library(stringr)
 library(sf)
 library(ggplot2)
 library(ggrepel) # https://github.com/slowkow/ggrepel/issues/89
@@ -92,7 +93,7 @@ knitr::kable(d, digits = 2,row.names=FALSE, col.names = c("Key","OGC Service Exa
 
 The Federal Statistical office BFS provides generalized boundaries of local and regional authorities. The data sets are particularly suitable for visualising statistical data on communes, districts and cantons as well as for creating small scale maps relating to different topics.
 
-BFS Generalisierte Gemeindegrenzen der Schweiz \[[BFS Generalisierte Gemeindegrenzen der Schweiz 2020](https://www.bfs.admin.ch/bfs/de/home/dienstleistungen/geostat/geodaten-bundesstatistik/administrative-grenzen/generalisierte-gemeindegrenzen.assetdetail.14776419.html),[Dataset](https://www.bfs.admin.ch/bfsstatic/dam/assets/14776419/master)\]
+BFS Generalisierte Gemeindegrenzen der Schweiz [BFS Generalisierte Gemeindegrenzen der Schweiz 2020](https://www.bfs.admin.ch/bfs/de/home/dienstleistungen/geostat/geodaten-bundesstatistik/administrative-grenzen/generalisierte-gemeindegrenzen.assetdetail.14776419.html),[Dataset](https://www.bfs.admin.ch/bfsstatic/dam/assets/14776419/master)]
 
 ## Distribution of Content by Service Owners
 
@@ -106,13 +107,63 @@ d$provider <- gsub("FL_","",d$provider)
 d2 <- d
 d <- d2 %>% group_by(provider) %>% summarise(layers=sum(layers),links=sum(links))
 
+# count number of unique layers and their service offers for each provider and summarise for each provider
+dunique <- geoCH %>%
+  group_by(provider,endpoint,title,name) %>%
+  distinct(title, pick("service","name")) %>%
+  group_by(provider,title) %>%
+  summarise(WMS=ifelse(sum(service=="WMS")>0,1,0),
+            WMTS=ifelse(sum(service=="WMTS")>0,1,0),
+            WFS=ifelse(sum(service=="WFS")>0,1,0)) %>%
+  mutate(layerservice= WMS*100+WMTS*10+WFS*1) %>%
+  group_by(provider) %>%
+  count(layerservice)  %>% 
+  mutate(ls = case_match(
+  layerservice,
+  10 ~ "WMTS",
+  100 ~ "WMS",
+  110 ~ "WMS+WMTS",
+  1 ~ "WFS",
+  101 ~ "WMS+WFS")) %>% 
+  select(-layerservice) %>% 
+  pivot_wider(names_from="ls",values_from = n,values_fill = 0) %>% 
+  mutate(provider= str_replace(provider,"_"," "))
+# %>% mutate(prop = prop.table(n))
 
 
-# nrow(geoCH)
-# sum(d$layers)
+# Investigating the use of the group / tree element usage by service providers
+dgroup <- lapply(unique(geoCH$provider),function(provider){
+  # iterate over all entries with groups and count number of unique group entries, titles remaining and number of unique titles
+  d  <- geoCH %>% filter(provider==!!provider) 
+  total <- d %>% nrow()
+  unique_titles  <- d %>% distinct(title) %>% nrow()
+  unique_names  <- d %>% distinct(name) %>% nrow()
+  trees  <- d %>% distinct(tree) %>% nrow()
+  groups <- d %>% filter(group!="") %>% distinct(group) %>% nrow() # number of unique group names
+  unique_title_without_groups <- d %>% filter(group=="") %>% distinct(title) %>% nrow() # number of unique titles
+  # anyNA <- sum(is.na(d$group)) # check if there are groups with NA entries
+  return(data.frame(provider,total,unique_titles,unique_names,groups,trees,unique_title_without_groups))
+})
+dgroup <- bind_rows(dgroup) %>% arrange(provider)
+# dgroup <- dgroup %>% mutate(title_group=uniqueTitleWOgroups+groups)
+
+# dbund <- geoCH %>% filter(provider=="Bund") %>% select(provider,name,title,service,group,tree,endpoint) %>% arrange(group)
+# dbund %>% group_by(group) %>% count(group) %>% filter(n>1) %>% data.frame()
+# dbund %>% group_by(tree) %>% count(tree) %>% filter(n>1) %>% data.frame()
+# 
+# dtg <- geoCH %>% filter(provider=="KT_TG") %>% select(provider,name,title,service,group,tree,endpoint) %>% arrange(group)
+# dtg %>% group_by(group) %>% count(group) %>% filter(n>1) %>% data.frame()
+# dtg %>% filter(group=="Landwirtschaft_Kulturflaechen")
+
+# The following counts should correspond in numbers, if both, service layers names and title are unique for each dataset
+# However the WMS server of KT_FR has "0" as layer name, hence counting over service title is the better approach.
+# geoCH %>% group_by(provider, service) %>% summarise(n=length(unique(name))) %>% data.frame()
+# geoCH %>% group_by(provider, service) %>% summarise(n=length(unique(title))) %>% data.frame()
+
+dnameInvalid <- geoCH %>% group_by(provider, name) %>% distinct(title) %>% mutate(nameInvalid=ifelse(is.na(name)|name==""|name=="0",1,0)) %>% group_by(provider) %>% summarise(nameInvalid=sum(nameInvalid,na.rm=T)) %>% filter(nameInvalid>0)
 ```
 
-Anzahl eindeutige Layernamen nach Provider und Dienstart `r sum(d$layers)` und ein total an Datensätzen `r nrow(geoCH)`
+Number of unique layer titles by provider and service `r sum(d$layers)` and total number of layers in total `r nrow(geoCH)`.
 
 ```{r}
 #| fig-cap: Number of unique Layers provided by each service owner 
@@ -122,10 +173,10 @@ plot1 <- ggplot(data = d, aes(x=reorder(provider,layers), y= layers)) +
   geom_text(aes(label = layers), nudge_y = 2,size=3, color = "black", hjust = -0.2) +
   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
   coord_flip() +
-  theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
+  theme(axis.line.x = element_line(linewidth = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
   # labs(title = "Verteilung des Geodiensteangebots", subtitle= "Anzahl Geodatenlayer nach Provider",
   #      x = NULL,y = "Anzahl eindeutige Layer",fill="",caption=caption)
-  labs(title = "Distribution of Content by Service Provider", subtitle= "Number of layers by Service Provider",
+  labs(title = "Datasets by Service Provider", subtitle= "Number of layers by Service Provider",
   x = NULL,y = "Number of Layers",fill="",caption=caption)
 ```
 
@@ -137,7 +188,7 @@ plot2 <- ggplot(data = d, aes(x=reorder(provider,links), y= links)) +
   geom_text(aes(label = links), nudge_y = 2,size=3, color = "black",hjust = -0.2)+
   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
   coord_flip() +
-  theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
+  theme(axis.line.x = element_line(linewidth = .2),panel.background = element_blank(),axis.ticks.y=element_blank())+
   # labs(title = "Verteilung der Geodatenserver", subtitle= "Anzahl Service Endpoints nach Provider",
   #      x = NULL,y = "Anzahl Service Endpoints",fill="",caption=caption)
   labs(title = "Distribution of Service Endpoints", subtitle= "Number of Service Endpoints by Service Provider",
@@ -145,8 +196,6 @@ plot2 <- ggplot(data = d, aes(x=reorder(provider,links), y= links)) +
 ```
 
 ```{r}
-#| fig-cap: a) Number of Layers provided by each service owner, b) Number of unique service links provided by each service owner 
-#| fig-height: 6
 library(cowplot)
 plot_grid(plot1, plot2, labels = c('a)', 'b)'), label_size = 10, label_y=0.01, label_fontface = "plain")
 ```
@@ -160,10 +209,10 @@ plot1 <- ggplot(data = d2, aes(x=reorder(provider,layers), y= layers,fill=servic
   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
   scale_fill_manual(values = c("WMS"="#2166ac","WMTS"="#67a9cf","WFS"="#7fbf7b"), na.value = "#666666")+
   coord_flip() +
-  theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank(),legend.position = "none")+
+  theme(axis.line.x = element_line(linewidth = .2),panel.background = element_blank(),axis.ticks.y=element_blank(),legend.position = "none")+
   # labs(title = "Verteilung des Geodiensteangebots", subtitle= "Anzahl Geodatenlayer nach Provider",
   #      x = NULL,y = "Anzahl eindeutige Layer",fill="",caption=caption)
-  labs(title = "Distribution of Content by Service Provider", subtitle= "Number of layers by Service Provider",
+  labs(title = "Layers and Service Type", subtitle= "Service Distribution by Service Provider",
   x = NULL,y = "Number of Layers",fill="",caption=caption)
 ```
 
@@ -176,10 +225,10 @@ plot2 <- ggplot(data = d2, aes(x=reorder(provider,links), y= links,fill=service)
   scale_y_continuous(expand = expansion(mult = c(0, .08)))+
   scale_fill_manual(values = c("WMS"="#2166ac","WMTS"="#67a9cf","WFS"="#7fbf7b"), na.value = "#666666")+
   coord_flip() +
-  theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank(),legend.position = c(0.9, 0.2))+
+  theme(axis.line.x = element_line(linewidth = .2),panel.background = element_blank(),axis.ticks.y=element_blank(),legend.position = c(0.9, 0.2))+
   # labs(title = "Verteilung der Geodatenserver", subtitle= "Anzahl Service Endpoints nach Provider",
   #      x = NULL,y = "Anzahl Service Endpoints",fill="",caption=caption)
-  labs(title = "Distribution of Service Endpoints", subtitle= "Number of Service Endpoints by Service Provider",
+  labs(title = "Service Endpoints", subtitle= "Service Distribution by Service Provider",
   x = NULL,y = "Number of Service Endpoints",fill="",caption=caption)
 ```
 
@@ -204,6 +253,31 @@ ggplot(data = d, aes(x=layers, y= links)) +
   themeReport +labs(x = "Number of Layers",y = "Number of Service Endpoints",
                     title = "Number of Service Endpoints vs Layers", caption=caption)
 ```
+```{r}
+d2w <- d2 %>% pivot_wider(names_from="service",values_from = c("layers","links"),values_fill = 0) %>% arrange(desc(layers_WMS))
+knitr::kable(d2w,caption = "Overview on geoservice provider and services", booktabs = TRUE, col.names = names(d2w) %>% str_replace("_"," ")%>% str_replace("links","endpoints")) %>%  kable_classic(font_size = 10)
+```
+
+The following table provides an overview of unique datasets (by title) for each service provider and service offered for each of them. Most of the datasets are uniquely offered as WMS service. This might be good for raster data and and maps, for vector for vector datasets, these should also be offered as a WFS in addition to a WMS or WMTS service. Column WFS with unique WFS layers have likely a WMS or WMTS service with a different title. 
+Canton Fribourg uses for their services with single layers no unique name field and names them *"0"*, hence the service *title* is used for the counts in this table.
+
+```{r}
+knitr::kable(dunique %>% arrange(desc(WMS)),caption = "Overview of number of geoservice combination by unique layer title", booktabs = TRUE) %>%  kable_classic(font_size = 10)
+```
+
+The next table shows for each service provider over all service the number of unique names, titles, groups and trees. If the group tag was empty then that layer does not belong to a group and is listed in the *unique title without group* column.
+
+```{r}
+knitr::kable(dgroup,caption = "Count of unique occurence for each service provider for usage of titles, names, groups and trees", booktabs = TRUE, col.names = names(dgroup) %>% str_replace_all("_"," ")) %>%  kable_classic(font_size = 10)
+```
+
+Not all services are configured in the same way some contain empty invalid name fields such as "0".
+
+```{r}
+knitr::kable(dnameInvalid,caption = "Service Provides where services named as *0*", booktabs = TRUE) %>%  kable_classic(font_size = 10)
+```
+
+
 # Metadata
 Completeness of metadata description for OGC Web Services in Switzerland
 
@@ -303,10 +377,10 @@ dLong <- dMeta %>% pivot_longer(cols=c("abstractPerc"  , "keywordsPerc" ,  "cont
          key = str_replace(key, "keywordsPerc", "Keywords filled %"),
          key = str_replace(key, "contactPerc", "Contact filled %")) %>% as.data.frame()
 
-dLong2 <- dMeta %>% pivot_longer(cols=c("abstractWordsMedian"  , "keywordsMedian" ,"keywordsURLListPerc",  "contactAtPerc", "titleDuplicatedPerc"), names_to = "key", values_to = "values") %>% 
+dLong2 <- dMeta %>% pivot_longer(cols=c("abstractWordsMedian"  ,"keywordsMedian", "contactAtPerc", "titleDuplicatedPerc"), names_to = "key", values_to = "values") %>% 
   mutate(key = str_replace(key, "abstractWordsMedian", "Abstract Wordcount Median"),
          key = str_replace(key, "keywordsMedian", "Keywords Wordcount Median"),
-         key = str_replace(key, "keywordsURLListPerc", "Keywords URL %"),
+         # key = str_replace(key, "keywordsURLListPerc", "Keywords URL %"),
          key = str_replace(key, "titleDuplicatedPerc", "Title duplicated %"),
          key = str_replace(key, "contactAtPerc", "Email %")) %>% as.data.frame()
 ```
@@ -337,12 +411,12 @@ ggplot(data = dLong2, aes(x=provider, y= values)) +
   scale_x_discrete(limits = rev(unique(sort(dLong$provider))))+
    theme(axis.line.x = element_line(size = .2),panel.background = element_blank(),axis.ticks.y=element_blank(),strip.background = element_rect(fill = "white"))+
   # facet_wrap(~key,nrow=1, scales = "free_x")+
-  facet_wrap(~factor(key, c("Abstract Wordcount Median", "Keywords Wordcount Median", "Keywords URL %", "Email %", "Title duplicated %")),nrow=1, scales = "free_x")+
-  labs(title = "Metadata", subtitle= "Usage of metadata fields in OWS",x = NULL,y = NULL,fill="",caption=caption)
-  # labs(title = "Metadaten", subtitle= "Verwendung der Metadatenfeldern in OWS",x = NULL,y = NULL,fill="",caption=caption)
+  facet_wrap(~factor(key, c("Abstract Wordcount Median", "Keywords Wordcount Median", "Email %", "Title duplicated %")),nrow=1, scales = "free_x")+
+  # labs(title = "Metadata", subtitle= "Usage of metadata fields in OWS",x = NULL,y = NULL,fill="",caption=caption)
+  labs(title = "Metadaten", subtitle= "Verwendung der Metadatenfeldern in OWS",x = NULL,y = NULL,fill="",caption=caption)
 ```
 Median Word Count in Abstracts `r median(geoCH$metaAbstractWordCount, na.rm=T)`, without empty abstracts `r geoCH %>% filter(metaAbstractWordCount>0) %>% summarise(medianWordCount=median(metaAbstractWordCount,na.rm=T)) %>% as.vector()`
-Median Word Count in Keywords `r median(geoCH$metaKeywordsCountComma, na.rm=T)`, without empty abstracts `r geoCH %>% filter(metaKeywordsCountComma >0) %>% summarise(medianKeywordCount=median(metaKeywordsCountComma,na.rm=T)) %>% as.vector()`
+Median Word Count in Keywords `r median(geoCH$metaKeywordsCountComma, na.rm=T)`, without empty keywords `r geoCH %>% filter(metaKeywordsCountComma >0) %>% summarise(medianKeywordCount=median(metaKeywordsCountComma,na.rm=T)) %>% as.vector()`
 
 
 # Spatial Coverage of Geoservices
