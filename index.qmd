@@ -26,7 +26,7 @@ library(knitr)          # set global knitr options of the document
 # memory.limit(size=1800) # set memory limit 
 
 # Libraries
-library(rgdal)# install.packages("rgdal") # install libraries
+# library(rgdal)# install.packages("rgdal") # install libraries
 library(dplyr)
 library(tidyr)
 library(stringr)
@@ -78,11 +78,12 @@ lakesSF <- st_read(dsn = lakeShapeFile,stringsAsFactors = FALSE,quiet=TRUE)
 
 ## Dataset
 
-| Dataset             | Description                                   |
-|---------------------|-----------------------------------------------|
-| geoservices_CH.csv  | OGC Services of Switzerland full dataset      |
+| Dataset            | Description                              |
+|--------------------|------------------------------------------|
+| geoservices_CH.csv | OGC Services of Switzerland full dataset |
 
 Random Example of a dataset
+
 ```{r}
 id <- sample.int(nrow(geoCH),1) # random service
 d <- data.frame(key=names(geoCH),example=as.character(geoCH[id,]))
@@ -93,7 +94,7 @@ knitr::kable(d, digits = 2,row.names=FALSE, col.names = c("Key","OGC Service Exa
 
 The Federal Statistical office BFS provides generalized boundaries of local and regional authorities. The data sets are particularly suitable for visualising statistical data on communes, districts and cantons as well as for creating small scale maps relating to different topics.
 
-BFS Generalisierte Gemeindegrenzen der Schweiz [BFS Generalisierte Gemeindegrenzen der Schweiz 2020](https://www.bfs.admin.ch/bfs/de/home/dienstleistungen/geostat/geodaten-bundesstatistik/administrative-grenzen/generalisierte-gemeindegrenzen.assetdetail.14776419.html),[Dataset](https://www.bfs.admin.ch/bfsstatic/dam/assets/14776419/master)]
+BFS Generalisierte Gemeindegrenzen der Schweiz [BFS Generalisierte Gemeindegrenzen der Schweiz 2020](https://www.bfs.admin.ch/bfs/de/home/dienstleistungen/geostat/geodaten-bundesstatistik/administrative-grenzen/generalisierte-gemeindegrenzen.assetdetail.14776419.html),[Dataset](https://www.bfs.admin.ch/bfsstatic/dam/assets/14776419/master)\]
 
 ## Distribution of Content by Service Owners
 
@@ -239,7 +240,6 @@ library(cowplot)
 plot_grid(plot1, plot2, labels = c('a)', 'b)'), label_size = 10, label_y=0.01, label_fontface = "plain")
 ```
 
-
 ```{r}
 #| fig-cap: Number of unique service links provided by each service owner 
 #| fig-height: 4
@@ -253,13 +253,13 @@ ggplot(data = d, aes(x=layers, y= links)) +
   themeReport +labs(x = "Number of Layers",y = "Number of Service Endpoints",
                     title = "Number of Service Endpoints vs Layers", caption=caption)
 ```
+
 ```{r}
 d2w <- d2 %>% pivot_wider(names_from="service",values_from = c("layers","links"),values_fill = 0) %>% arrange(desc(layers_WMS))
 knitr::kable(d2w,caption = "Overview on geoservice provider and services", booktabs = TRUE, col.names = names(d2w) %>% str_replace("_"," ")%>% str_replace("links","endpoints")) %>%  kable_classic(font_size = 10)
 ```
 
-The following table provides an overview of unique datasets (by title) for each service provider and service offered for each of them. Most of the datasets are uniquely offered as WMS service. This might be good for raster data and and maps, for vector for vector datasets, these should also be offered as a WFS in addition to a WMS or WMTS service. Column WFS with unique WFS layers have likely a WMS or WMTS service with a different title. 
-Canton Fribourg uses for their services with single layers no unique name field and names them *"0"*, hence the service *title* is used for the counts in this table.
+The following table provides an overview of unique datasets (by title) for each service provider and service offered for each of them. Most of the datasets are uniquely offered as WMS service. This might be good for raster data and and maps, for vector for vector datasets, these should also be offered as a WFS in addition to a WMS or WMTS service. Column WFS with unique WFS layers have likely a WMS or WMTS service with a different title. Canton Fribourg uses for their services with single layers no unique name field and names them *"0"*, hence the service *title* is used for the counts in this table.
 
 ```{r}
 knitr::kable(dunique %>% arrange(desc(WMS)),caption = "Overview of number of geoservice combination by unique layer title", booktabs = TRUE) %>%  kable_classic(font_size = 10)
@@ -277,8 +277,8 @@ Not all services are configured in the same way some contain empty invalid name 
 knitr::kable(dnameInvalid,caption = "Service Provides where services named as *0*", booktabs = TRUE) %>%  kable_classic(font_size = 10)
 ```
 
-
 # Metadata
+
 Completeness of metadata description for OGC Web Services in Switzerland
 
 ```{r}
@@ -415,9 +415,8 @@ ggplot(data = dLong2, aes(x=provider, y= values)) +
   # labs(title = "Metadata", subtitle= "Usage of metadata fields in OWS",x = NULL,y = NULL,fill="",caption=caption)
   labs(title = "Metadaten", subtitle= "Verwendung der Metadatenfeldern in OWS",x = NULL,y = NULL,fill="",caption=caption)
 ```
-Median Word Count in Abstracts `r median(geoCH$metaAbstractWordCount, na.rm=T)`, without empty abstracts `r geoCH %>% filter(metaAbstractWordCount>0) %>% summarise(medianWordCount=median(metaAbstractWordCount,na.rm=T)) %>% as.vector()`
-Median Word Count in Keywords `r median(geoCH$metaKeywordsCountComma, na.rm=T)`, without empty keywords `r geoCH %>% filter(metaKeywordsCountComma >0) %>% summarise(medianKeywordCount=median(metaKeywordsCountComma,na.rm=T)) %>% as.vector()`
 
+Median Word Count in Abstracts `r median(geoCH$metaAbstractWordCount, na.rm=T)`, without empty abstracts `r geoCH %>% filter(metaAbstractWordCount>0) %>% summarise(medianWordCount=median(metaAbstractWordCount,na.rm=T)) %>% as.vector()` Median Word Count in Keywords `r median(geoCH$metaKeywordsCountComma, na.rm=T)`, without empty keywords `r geoCH %>% filter(metaKeywordsCountComma >0) %>% summarise(medianKeywordCount=median(metaKeywordsCountComma,na.rm=T)) %>% as.vector()`
 
 # Spatial Coverage of Geoservices
 
@@ -542,7 +541,9 @@ ggplot() + themeReport  +
   labs(title = "GeoServices Switzerland",subtitle = "Spatial Coverage of the Bounding Boxes with EPSG 2056",fill = "",x = NULL,y = NULL,colour="", caption=paste("Map extent set to Switzerland, ",caption,", BFS",sep=""))+coord_sf(datum = NA)
 
 ```
+
 # Word Clouds
+
 Word clouds generated for OGC Web Services metadata entries title, abstract and keywords. URLs and identifiers are filtered out for better depiction of word usage rather than repetitive urls.
 
 ```{r}
@@ -611,7 +612,6 @@ wordcloud(words = df$word, freq = df$freq, min.freq = 10, max.words=200, random.
 df <- tdmkeywords
 wordcloud(words = df$word, freq = df$freq, min.freq = 10, max.words=200, random.order=FALSE, rot.per=0.35, colors=brewer.pal(9, "Blues")[3:9])
 ```
-
 
 ```{r}
 #| fig-cap: Most frequent Terms for Geoservice title 
